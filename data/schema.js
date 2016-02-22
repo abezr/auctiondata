@@ -34,10 +34,21 @@ import {
   User,
   Item,
   getUser,
-  getViewer,
   getItem,
   getItems,
 } from './database';
+
+// import {
+//     SignupMutation,
+//     LoginMutation,
+//     PlaceBidMutation,
+// } from './mutation';
+
+// import {
+//   GraphQLUser,
+//   GraphQLItem,
+//   nodeField
+// } from './types';
 
 /**
  * We get the node interface and field from the Relay library.
@@ -67,15 +78,19 @@ var {nodeInterface, nodeField} = nodeDefinitions(
   }
 );
 
-/**
- * Define your own types here
- */
-
 var GraphQLUser = new GraphQLObjectType({
   name: 'User',
   description: 'A person who uses our app',
   fields: () => ({
     id: globalIdField('User'),
+    name: {
+      type: GraphQLString,
+      description: 'The name of the item',
+    },
+    sessionID: {
+      type: GraphQLString,
+      description: 'The name of the item',
+    },
     items: {
       type: itemConnection,
       description: 'A person\'s collection of items',
@@ -85,6 +100,7 @@ var GraphQLUser = new GraphQLObjectType({
   }),
   interfaces: [nodeInterface],
 });
+console.log('GraphQLUser: ' + GraphQLUser);
 
 var GraphQLItem = new GraphQLObjectType({
   name: 'Item',
@@ -109,6 +125,90 @@ var GraphQLItem = new GraphQLObjectType({
 var {connectionType: itemConnection} =
   connectionDefinitions({name: 'Item', nodeType: GraphQLItem});
 
+
+  let SignupMutation = mutationWithClientMutationId({
+  name: 'Signup',
+  inputFields: {
+    name: {
+      type: new GraphQLNonNull(GraphQLString)
+    },
+    password: {
+      type: new GraphQLNonNull(GraphQLString)
+    },
+    id: {
+      type: new GraphQLNonNull(GraphQLID)
+    },
+  },
+  outputFields: {
+    user: {
+      type: GraphQLUser,
+      resolve: (newUser) => newUser
+    }
+  },
+  mutateAndGetPayload: (credentials, {
+    rootValue
+  }) => {
+    var newUser = addUser(credentials, rootValue);
+    return newUser;
+  }
+});
+
+var LoginMutation = mutationWithClientMutationId({
+  name: 'Login',
+  inputFields: {
+    mail: {
+      type: new GraphQLNonNull(GraphQLString)
+    },
+    password: {
+      type: new GraphQLNonNull(GraphQLString)
+    },
+    id: {
+      type: new GraphQLNonNull(GraphQLString)
+    }
+  },
+  outputFields: {
+    user: {
+      type: GraphQLUser,
+      resolve: (newUser) => newUser
+    }
+  },
+  mutateAndGetPayload: (credentials, {
+    rootValue
+  }) => co(function*() {
+    console.log('schema:loginmutation', credentials);
+    var newUser = yield getUserByCredentials(credentials, rootValue);
+    return newUser;
+  })
+});
+
+var PlaceBidMutation = mutationWithClientMutationId({
+  name: 'PlaceBid',
+  inputFields: {
+    // item: {
+    //   type: GraphQLItem
+    // },
+    userName: {
+      type: GraphQLString
+    }
+  },
+  outputFields: {
+    item: {
+      type: GraphQLItem,
+      resolve: (item) => item
+    },
+  },
+  mutateAndGetPayload: ({restaurant, userName}, {rootValue}) => {
+    item.id = fromGlobalId(item.id).id;
+    return putBidOnItem(item, rootValue);
+  }
+});
+
+var connectItem = connectionDefinitions({
+  name: 'Item',
+  nodeType: GraphQLItem
+});
+var itemsConnection = connectItem.connectionType;
+
 /**
  * This is the type that will be the root of our query,
  * and the entry point into our schema.
@@ -118,7 +218,23 @@ var GraphQLRoot = new GraphQLObjectType({
   fields: () => ({
     node: nodeField,
     // Add your own root fields here
-    viewer: {
+    items: {
+      type: itemsConnection,
+      args: {
+        name: {
+          type: GraphQLString,
+          description: 'the name you are looking for'
+        },
+        ...connectionArgs
+      },
+      description: 'The nearest restaurants',
+      resolve: (root, args, {rootValue}) => co(function*() {
+        console.log('schema:restaurants:name', args);
+        var restaurants = yield getRestaurants(args, rootValue);
+        return connectionFromArray(restaurants, args);
+      })
+    },
+    user: {
       type: GraphQLUser,
       resolve: (root, id, {rootValue}) => getUser(rootValue),
     },
@@ -128,7 +244,7 @@ var GraphQLRoot = new GraphQLObjectType({
 var queryType = new GraphQLObjectType({
   name: 'RootQueryType',
   fields: () => ({
-    viewer: {
+    user: {
       type: new GraphQLNonNull(GraphQLUser),
       args: {
         id: {
